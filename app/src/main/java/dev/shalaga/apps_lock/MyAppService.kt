@@ -127,16 +127,43 @@ class MyAppService : Service() {
         }
 
         Log.d(TAG, "Candidate: $candidate")
-        val locked = prefs.getStringSet("locked_set", emptySet()) ?: emptySet()
-        if (candidate != null
-            && candidate != packageName
-            && candidate in locked
-            && candidate != lastForeground
-        ) {
-            lastForeground = candidate
-            showUnlock(candidate)
+
+        if (candidate == null || candidate == packageName) {
+            Log.d(TAG, "No app to check or it's our own service → skipping")
+            return
         }
+
+        val locked = prefs.getStringSet("locked_set", emptySet()) ?: emptySet()
+
+        if (candidate !in locked) {
+            Log.d(TAG, "$candidate is not locked—skipping")
+            return
+        }
+
+        val lastUnlock = getLastUnlockTime(candidate)
+        if (now - lastUnlock < 30.seconds.inWholeMilliseconds) {
+            Log.d(TAG, "$candidate was unlocked ${now - lastUnlock}ms ago—skipping")
+            return
+        }
+
+        /*if (candidate == lastForeground) {
+            Log.d(TAG, "$candidate already handled—skipping")
+            return
+        }*/
+
+        lastForeground = candidate
+        showUnlock(candidate)
     }
+
+    private val appsLockPrefs by lazy {
+        getSharedPreferences("apps_lock_prefs", MODE_PRIVATE)
+    }
+
+    private fun getUnlockedPackages(): Set<String> =
+        appsLockPrefs.getStringSet("unlocked_set", emptySet()) ?: emptySet()
+
+    private fun getLastUnlockTime(pkg: String): Long =
+        appsLockPrefs.getLong("unlocked_$pkg", 0L)
 
     private fun showUnlock(pkg: String) {
         Log.d(TAG, "Unlock: $pkg")

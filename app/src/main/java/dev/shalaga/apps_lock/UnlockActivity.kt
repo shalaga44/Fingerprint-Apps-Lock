@@ -52,14 +52,16 @@ class UnlockActivity : AppCompatActivity() {
         }
     }
 
+    private val appsLockPrefs by lazy {
+        getSharedPreferences("apps_lock_prefs", MODE_PRIVATE)
+    }
     private fun recordUnlock(pkg: String) {
-        val prefs = getSharedPreferences("apps_lock_prefs", MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        prefs.edit {
+        appsLockPrefs.edit {
             putLong("unlocked_$pkg", now)
                 .putStringSet(
                     "unlocked_set",
-                    (prefs.getStringSet("unlocked_set", emptySet()) ?: emptySet()) + pkg
+                    (appsLockPrefs.getStringSet("unlocked_set", emptySet()) ?: emptySet()) + pkg
                 )
         }
         Log.d(TAG, "Recorded unlock of $pkg at $now")
