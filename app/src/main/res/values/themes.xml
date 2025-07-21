@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base app theme, now using MaterialComponents (AppCompat) -->
+    <style name="Theme.AppsLock" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <!--
+          You can override your colors here if you like:
+          <item name="colorPrimary">@color/your_primary</item>
+          <item name="colorOnPrimary">@color/your_on_primary</item>
+          <item name="colorSecondary">@color/your_secondary</item>
+          <item name="colorOnSecondary">@color/your_on_secondary</item>
+          …etc.
+        -->
+    </style>
+
+    <!-- Optional variant without an ActionBar -->
+    <style name="Theme.AppsLock.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar"/>
+
+</resources>
