@@ -1,15 +1,15 @@
 package dev.shalaga.apps_lock
+
 import android.app.*
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import kotlin.time.Duration.Companion.minutes
+import androidx.core.net.toUri
 import kotlin.time.Duration.Companion.seconds
 
 class MyAppService : Service() {
@@ -23,65 +23,88 @@ class MyAppService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private var lastForeground: String? = null
     private var lastPoll = System.currentTimeMillis()
-    private var lastFg: String? = null
     private val prefs by lazy {
         getSharedPreferences("apps_lock_prefs", Context.MODE_PRIVATE)
     }
 
-    private val task = object : Runnable {
+    private val poller = object : Runnable {
         override fun run() {
-            Log.d(TAG, "Polling from $lastPoll")
-            ensureUsageAccess()
-            checkForeground()
-            lastPoll = System.currentTimeMillis()
-            handler.postDelayed(this, POLL_MS)
+            Log.d(TAG, ">>> Poller: scheduling checkForeground()")
+            try {
+                ensureUsageAccess()
+                checkForeground()
+            } catch (t: Throwable) {
+                Log.e(TAG, "❌ Error during polling", t)
+            } finally {
+                lastPoll = System.currentTimeMillis()
+                handler.postDelayed(this, POLL_MS)
+                Log.d(TAG, "⏱ Next poll in ${POLL_MS / 1000 / 60}m")
+            }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+
+
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                NotificationChannel(CH_POLL, "Polling", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(
+                    CH_POLL,
+                    "AppsLock Polling",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply { description = "Monitoring foreground apps" }
             )
             nm.createNotificationChannel(
-                NotificationChannel(CH_UNLOCK, "Unlock", NotificationManager.IMPORTANCE_HIGH).apply {
+                NotificationChannel(
+                    CH_UNLOCK,
+                    "AppsLock Unlock",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Popup to unlock a locked app"
                     setSound(null, null)
                 }
             )
         }
-        val notif = NotificationCompat.Builder(this, CH_POLL)
-            .setContentTitle("AppsLock running")
+
+
+        val pollNotif = NotificationCompat.Builder(this, CH_POLL)
+            .setContentTitle("AppsLock is running")
+            .setContentText("Monitoring your apps…")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .build()
-        startForeground(ID_POLL, notif)
+        startForeground(ID_POLL, pollNotif)
 
-        handler.post(task)
+
+        handler.post(poller)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        handler.removeCallbacks(task)
-        handler.post(task)
+        handler.removeCallbacks(poller)
+        handler.post(poller)
         return START_STICKY
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(task)
+        handler.removeCallbacks(poller)
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?) = null
+    override fun onBind(intent: Intent?): IBinder? = null
 
     private fun ensureUsageAccess() {
         val ops = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
         if (ops.checkOpNoThrow(
                 AppOpsManager.OPSTR_GET_USAGE_STATS,
-                Process.myUid(), packageName
+                Process.myUid(),
+                packageName
             ) != AppOpsManager.MODE_ALLOWED
         ) {
+            Log.w(TAG, "❗ Usage access not granted, sending user to settings")
             startActivity(
                 Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -95,20 +118,22 @@ class MyAppService : Service() {
         val evts = usm.queryEvents(lastPoll, now)
         val ev = UsageEvents.Event()
         var candidate: String? = null
+
         while (evts.hasNextEvent()) {
             evts.getNextEvent(ev)
-            if (ev.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+            if (ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
                 candidate = ev.packageName
             }
         }
+
         Log.d(TAG, "Candidate: $candidate")
         val locked = prefs.getStringSet("locked_set", emptySet()) ?: emptySet()
-        if (candidate != null &&
-            candidate != packageName &&
-            candidate in locked &&
-            candidate != lastFg
+        if (candidate != null
+            && candidate != packageName
+            && candidate in locked
+            && candidate != lastForeground
         ) {
-            lastFg = candidate
+            lastForeground = candidate
             showUnlock(candidate)
         }
     }
@@ -128,7 +153,7 @@ class MyAppService : Service() {
             startActivity(
                 Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
+                    "package:$packageName".toUri(),
                 )
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )

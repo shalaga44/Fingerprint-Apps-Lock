@@ -1,13 +1,10 @@
 package dev.shalaga.apps_lock
 
-import android.annotation.SuppressLint
-import android.app.KeyguardManager
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -21,87 +18,84 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import dev.shalaga.apps_lock.ui.theme.AppsLockTheme
 import java.util.concurrent.Executor
+import androidx.core.content.edit
 
 class UnlockActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "UnlockActivity"
     }
 
-    @SuppressLint("NewApi")
     override fun onCreate(savedInstanceState: Bundle?) {
-        Log.d(TAG, "🔓 onCreate invoked with intent=$intent")
         super.onCreate(savedInstanceState)
 
-        // 1) Wake screen & show over lockscreen
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            Log.d(TAG, "Configuring showWhenLocked / turnScreenOn")
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-            (getSystemService(KEYGUARD_SERVICE) as KeyguardManager)
-                .requestDismissKeyguard(this, null)
-        } else {
-            Log.d(TAG, "Applying window flags for older Android")
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-            )
-        }
+        val pkg = intent.getStringExtra("packageName")
+            ?: run {
+                Log.w(TAG, "No packageName extra—finishing")
+                finish(); return
+            }
 
-        // 2) Extract which package we’re unlocking
-        val packageToUnlock = intent.getStringExtra("packageName")
-        if (packageToUnlock == null) {
-            Log.w(TAG, "No packageName extra found—finishing")
-            finish()
-            return
-        }
-        Log.d(TAG, "Unlock requested for package: $packageToUnlock")
+        Log.d(TAG, "Unlock requested for $pkg")
 
-        // 3) Compose UI
         setContent {
-            AppsLockTheme {
+            MaterialTheme {
                 Surface(
                     Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    UnlockScreen(
-                        packageName = packageToUnlock,
-                        onAuthenticated = {
-                            Log.d(TAG, "Authentication succeeded, finishing activity")
-                            finish()
-                        }
-                    )
+                    UnlockScreen(pkg) {
+                        recordUnlock(pkg)
+                        finish()
+                    }
                 }
             }
         }
     }
+
+    private fun recordUnlock(pkg: String) {
+        val prefs = getSharedPreferences("apps_lock_prefs", MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        prefs.edit {
+            putLong("unlocked_$pkg", now)
+                .putStringSet(
+                    "unlocked_set",
+                    (prefs.getStringSet("unlocked_set", emptySet()) ?: emptySet()) + pkg
+                )
+        }
+        Log.d(TAG, "Recorded unlock of $pkg at $now")
+    }
 }
+
 @Composable
 fun UnlockScreen(packageName: String, onAuthenticated: () -> Unit) {
     val activity = LocalContext.current as FragmentActivity
     val executor = ContextCompat.getMainExecutor(activity)
     var err by remember { mutableStateOf<String?>(null) }
 
-    val callback = object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
-        override fun onAuthenticationSucceeded(res: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+    val callback = object : BiometricPrompt.AuthenticationCallback() {
+        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
             onAuthenticated()
         }
 
-        override fun onAuthenticationError(code: Int, str: CharSequence) {
-            err = str.toString()
+        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+            err = errString.toString()
         }
     }
 
-    val prompt = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+    val prompt: PromptInfo = PromptInfo.Builder()
         .setTitle("Unlock $packageName")
         .setNegativeButtonText("Cancel")
         .build()
 
-    androidx.biometric.BiometricPrompt(activity, executor, callback)
-        .authenticate(prompt)
+    LaunchedEffect(Unit) {
+        val bm = BiometricManager.from(activity)
+        if (bm.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS) {
+            BiometricPrompt(activity, executor, callback)
+                .authenticate(prompt)
+        } else {
+            err = "Biometric unavailable"
+        }
+    }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -117,4 +111,3 @@ fun UnlockScreen(packageName: String, onAuthenticated: () -> Unit) {
         }
     }
 }
-
