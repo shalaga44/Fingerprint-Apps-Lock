@@ -48,7 +48,7 @@ class UnlockActivity : AppCompatActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     UnlockScreen(pkg) {
-                        recordUnlock(pkg)
+                        LockManager.recordUnlock(this, pkg)
                         launchApp(pkg)
                         finish()
                     }
@@ -61,17 +61,6 @@ class UnlockActivity : AppCompatActivity() {
         getSharedPreferences("apps_lock_prefs", MODE_PRIVATE)
     }
 
-    private fun recordUnlock(pkg: String) {
-        val now = System.currentTimeMillis()
-        appsLockPrefs.edit {
-            putLong("unlocked_$pkg", now)
-                .putStringSet(
-                    "unlocked_set",
-                    (appsLockPrefs.getStringSet("unlocked_set", emptySet()) ?: emptySet()) + pkg
-                )
-        }
-        Log.d(TAG, "Recorded unlock of $pkg at $now")
-    }
 }
 
 @Composable

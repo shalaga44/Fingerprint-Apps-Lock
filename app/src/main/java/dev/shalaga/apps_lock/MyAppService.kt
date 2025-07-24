@@ -99,44 +99,25 @@ class MyAppService : Service() {
     private fun checkForeground() {
         val now = System.currentTimeMillis()
         val usm = getSystemService(UsageStatsManager::class.java)
-        val evts = usm.queryEvents(lastPoll, now)
+        val events = usm.queryEvents(lastPoll, now)
         val ev = UsageEvents.Event()
         var candidate: String? = null
 
-        while (evts.hasNextEvent()) {
-            evts.getNextEvent(ev)
-            if (ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
+        while (events.hasNextEvent()) {
+            events.getNextEvent(ev)
+            if (ev.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                 candidate = ev.packageName
             }
         }
 
         Log.d(TAG, "Candidate: $candidate")
+        if (candidate == null || candidate == packageName) return
 
-        if (candidate == null || candidate == packageName) {
-            Log.d(TAG, "No app to check or it's our own service → skipping")
-            return
+        if (LockManager.shouldLock(this, candidate)) {
+            showUnlock(candidate)
+        } else {
+            Log.d(TAG, "No lock needed for $candidate")
         }
-
-        val locked = prefs.getStringSet("locked_set", emptySet()) ?: emptySet()
-
-        if (candidate !in locked) {
-            Log.d(TAG, "$candidate is not locked—skipping")
-            return
-        }
-
-        val lastUnlock = getLastUnlockTime(candidate)
-        if (now - lastUnlock < 30.seconds.inWholeMilliseconds) {
-            Log.d(TAG, "$candidate was unlocked ${now - lastUnlock}ms ago—skipping")
-            lastUnlockedForeground = candidate
-            return
-        }
-
-        if (candidate == lastUnlockedForeground) {
-            Log.d(TAG, "$candidate already handled—skipping")
-            return
-        }
-
-        showUnlock(candidate)
     }
 
     private val appsLockPrefs by lazy {

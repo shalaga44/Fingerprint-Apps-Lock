@@ -4,14 +4,11 @@ import android.app.AppOpsManager
 import android.app.Application
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
-import android.hardware.biometrics.BiometricPrompt
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -21,8 +18,6 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricPrompt.PromptInfo
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -43,12 +38,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -57,29 +50,26 @@ import androidx.navigation.navArgument
 import dev.shalaga.apps_lock.ui.theme.AppsLockTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.concurrent.Executor
 
 data class AppInfo(val name: String, val packageName: String)
 
-class AppsViewModel(application: Application) : AndroidViewModel(application) {
-    private val prefs = application
-        .getSharedPreferences("apps_lock_prefs", Context.MODE_PRIVATE)
+class AppsViewModel(val _application: Application) : AndroidViewModel(_application) {
+
 
     private val _installed = MutableStateFlow<List<AppInfo>>(emptyList())
     val installed = _installed.asStateFlow()
     private val _loading = MutableStateFlow(true)
     val loading = _loading.asStateFlow()
 
-    private val saved = prefs.getStringSet("locked_set", emptySet()) ?: emptySet()
+    private val saved = LockManager.getList(_application.applicationContext)
     private val _locked = MutableStateFlow(saved)
     val locked = _locked.asStateFlow()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            val pm = application.packageManager
+            val pm = _application.packageManager
             val apps = pm.getInstalledApplications(0)
                 .mapNotNull { ai ->
                     pm.getLaunchIntentForPackage(ai.packageName)
@@ -94,7 +84,7 @@ class AppsViewModel(application: Application) : AndroidViewModel(application) {
         val cur = _locked.value.toMutableSet()
         if (!cur.remove(pkg)) cur += pkg
         _locked.value = cur
-        prefs.edit().putStringSet("locked_set", cur).apply()
+        LockManager.setList(_application.applicationContext, cur)
     }
 }
 
