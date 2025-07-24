@@ -1,8 +1,12 @@
 package dev.shalaga.apps_lock
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
@@ -45,6 +49,7 @@ class UnlockActivity : AppCompatActivity() {
                 ) {
                     UnlockScreen(pkg) {
                         recordUnlock(pkg)
+                        launchApp(pkg)
                         finish()
                     }
                 }
@@ -55,6 +60,7 @@ class UnlockActivity : AppCompatActivity() {
     private val appsLockPrefs by lazy {
         getSharedPreferences("apps_lock_prefs", MODE_PRIVATE)
     }
+
     private fun recordUnlock(pkg: String) {
         val now = System.currentTimeMillis()
         appsLockPrefs.edit {
@@ -70,7 +76,7 @@ class UnlockActivity : AppCompatActivity() {
 
 @Composable
 fun UnlockScreen(packageName: String, onAuthenticated: () -> Unit) {
-    val activity = LocalContext.current as FragmentActivity
+    val activity = LocalActivity.current as FragmentActivity
     val executor = ContextCompat.getMainExecutor(activity)
     var err by remember { mutableStateOf<String?>(null) }
 
@@ -111,5 +117,16 @@ fun UnlockScreen(packageName: String, onAuthenticated: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
+    }
+}
+
+fun Context.launchApp(pkg: String) {
+    val pm = packageManager
+    val launchIntent = pm.getLaunchIntentForPackage(pkg)
+    if (launchIntent != null) {
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(launchIntent)
+    } else {
+        Toast.makeText(this, "App not found: $pkg", Toast.LENGTH_SHORT).show()
     }
 }

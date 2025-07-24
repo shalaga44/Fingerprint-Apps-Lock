@@ -105,30 +105,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
-        dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        comp = ComponentName(this, AppsLockAdminReceiver::class.java)
-
-        if (!dpm.isAdminActive(comp)) {
-            startActivity(Intent(this, DeviceAdminSetupActivity::class.java))
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            !Settings.canDrawOverlays(this)
-        ) {
-            Log.w(TAG, "Overlay permission missing; sending user to Settings")
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-
+        if (!permissionsAllGranted()) {
+            startActivity(Intent(this, PermissionActivity::class.java))
+            finish()
+            return
         }
 
         enableEdgeToEdge()
-        requestPermissions()
-        requireUsageAccess()
-        requireNotifListener()
+//        requestPermissions()
+//        requireUsageAccess()
+//        requireNotifListener()
 
         setContent {
             AppsLockTheme {
@@ -185,9 +171,10 @@ class MainActivity : AppCompatActivity() {
 @Composable
 fun AppsLockApp() {
     val TAG = "AppsLockApp"
+    val context = LocalContext.current
     val vm: AppsViewModel = viewModel(
         factory =
-            AndroidViewModelFactory.getInstance(LocalContext.current.applicationContext as Application)
+            AndroidViewModelFactory.getInstance(context.applicationContext as Application)
     )
     val apps by vm.installed.collectAsState()
     val loading by vm.loading.collectAsState()
@@ -199,7 +186,7 @@ fun AppsLockApp() {
             AppListScreen(
                 apps, loading, locked,
                 onToggle = { vm.toggle(it) },
-                onLaunch = { pkg -> nav.navigate("unlock/$pkg") }
+                onLaunch = { pkg -> context.launchApp(pkg) /*nav.navigate("unlock/$pkg")*/ }
             )
         }
         composable(
@@ -214,7 +201,7 @@ fun AppsLockApp() {
                         Log.d(TAG, "Authentication succeeded → finish()")
                     },
 
-                )
+                    )
             }
         }
     }

@@ -23,7 +23,7 @@ class MyAppService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    private var lastForeground: String? = null
+    private var lastUnlockedForeground: String? = null
     private var lastPoll = System.currentTimeMillis()
     private val prefs by lazy {
         getSharedPreferences("apps_lock_prefs", Context.MODE_PRIVATE)
@@ -33,7 +33,6 @@ class MyAppService : Service() {
         override fun run() {
             Log.d(TAG, ">>> Poller: scheduling checkForeground()")
             try {
-                ensureUsageAccess()
                 checkForeground()
             } catch (t: Throwable) {
                 Log.e(TAG, "❌ Error during polling", t)
@@ -96,21 +95,6 @@ class MyAppService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun ensureUsageAccess() {
-        val ops = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        if (ops.checkOpNoThrow(
-                AppOpsManager.OPSTR_GET_USAGE_STATS,
-                Process.myUid(),
-                packageName
-            ) != AppOpsManager.MODE_ALLOWED
-        ) {
-            Log.w(TAG, "❗ Usage access not granted, sending user to settings")
-            startActivity(
-                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-        }
-    }
 
     private fun checkForeground() {
         val now = System.currentTimeMillis()
@@ -143,15 +127,15 @@ class MyAppService : Service() {
         val lastUnlock = getLastUnlockTime(candidate)
         if (now - lastUnlock < 30.seconds.inWholeMilliseconds) {
             Log.d(TAG, "$candidate was unlocked ${now - lastUnlock}ms ago—skipping")
+            lastUnlockedForeground = candidate
             return
         }
 
-        /*if (candidate == lastForeground) {
+        if (candidate == lastUnlockedForeground) {
             Log.d(TAG, "$candidate already handled—skipping")
             return
-        }*/
+        }
 
-        lastForeground = candidate
         showUnlock(candidate)
     }
 
@@ -173,35 +157,7 @@ class MyAppService : Service() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            !Settings.canDrawOverlays(this)
-        ) {
-            Log.w(TAG, "Overlay permission missing; sending user to Settings")
-            startActivity(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    "package:$packageName".toUri(),
-                )
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-            return
-        }
-
         startActivity(unlockIntent)
 
-        val pi = PendingIntent.getActivity(
-            this, 0, unlockIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notif = NotificationCompat.Builder(this, CH_UNLOCK)
-            .setContentTitle("Unlock $pkg")
-            .setContentText("Authenticate")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setFullScreenIntent(pi, true)
-            .build()
-        getSystemService(NotificationManager::class.java)
-            .notify(ID_UNLOCK, notif)
     }
 }
